@@ -1,0 +1,24 @@
+# OneDrive / Windows
+desktop.ini
+Thumbs.db
+ehthumbs.db
+$RECYCLE.BIN/
+*.lnk
+
+# macOS
+.DS_Store
+._*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Node (only if you ever add tooling)
+node_modules/
+package-lock.json
+
+# Scratch
+*.log
+tmp/

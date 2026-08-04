@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Multiplication Facts</title>
+<style>
+  :root{
+    --bg:#11151c;
+    --panel:#1a212b;
+    --panel-2:#222b38;
+    --ink:#e8eef7;
+    --ink-dim:#93a2b8;
+    --line:#2c3745;
+    --accent:#5aa9ff;
+    --good:#3ec98a;
+    --bad:#ff7a6b;
+    --cell:44px;
+    --cellfont:13px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex; flex-direction:column; align-items:center;
+    -webkit-text-size-adjust:100%; -webkit-tap-highlight-color:transparent;
+  }
+  header{
+    width:100%; max-width:860px; display:flex; align-items:center; gap:10px;
+    padding:12px 16px; border-bottom:1px solid var(--line);
+  }
+  header h1{font-size:15px; font-weight:600; margin:0; color:var(--ink-dim); flex:1; letter-spacing:.02em}
+  @media (max-width:430px){ header h1{display:none} }
+  button, select{
+    font:inherit; color:var(--ink); background:var(--panel-2);
+    border:1px solid var(--line); border-radius:8px; padding:7px 13px; cursor:pointer;
+  }
+  select{padding:7px 8px}
+  button:hover{background:#2b3644}
+  button:active{transform:translateY(1px)}
+  button:disabled{opacity:.4; cursor:default}
+  .btn-quiet{background:transparent; color:var(--ink-dim)}
+  .btn-quiet:hover{background:var(--panel-2); color:var(--ink)}
+  main{width:100%; max-width:860px; padding:16px; flex:1}
+
+  /* ---------- practice ---------- */
+  #practice{display:flex; flex-direction:column; align-items:center; padding-top:4vh}
+  .problem{
+    font-variant-numeric:tabular-nums;
+    font-size:clamp(42px,11vw,80px); font-weight:300; letter-spacing:.04em;
+    line-height:1.1; margin-bottom:22px; user-select:none; text-align:center;
+  }
+  .problem .eq{color:var(--ink-dim)}
+  #answer{
+    width:210px; text-align:center; font:300 clamp(32px,8vw,54px)/1.2 inherit;
+    font-variant-numeric:tabular-nums;
+    background:var(--panel); color:var(--ink);
+    border:2px solid var(--line); border-radius:14px; padding:6px 10px; outline:none;
+  }
+  #answer:focus{border-color:var(--accent)}
+  #answer.is-wrong{border-color:var(--bad); animation:shake .3s}
+  #answer.is-right{border-color:var(--good)}
+  #answer:disabled{opacity:.6; -webkit-text-fill-color:var(--ink)}
+  @keyframes shake{
+    0%,100%{transform:translateX(0)} 25%{transform:translateX(-7px)}
+    50%{transform:translateX(7px)} 75%{transform:translateX(-4px)}
+  }
+  #feedback{min-height:2.6em; margin-top:16px; text-align:center; font-size:17px; max-width:440px}
+  #feedback .reveal{font-size:22px; font-weight:500; white-space:nowrap}
+  #feedback .hint{display:block; color:var(--ink-dim); font-size:14px; margin-top:6px}
+  .fb-good{color:var(--good)}
+  .fb-bad{color:var(--bad)}
+  .fb-neutral{color:var(--ink)}
+
+  /* keypad */
+  #keypad{
+    display:none; grid-template-columns:repeat(3,1fr); gap:9px;
+    width:min(300px,86vw); margin-top:18px;
+  }
+  #keypad.on{display:grid}
+  #keypad button{
+    font-size:26px; font-weight:400; padding:0; height:58px; border-radius:12px;
+    background:var(--panel); font-variant-numeric:tabular-nums; touch-action:manipulation;
+  }
+  #keypad button:hover{background:var(--panel-2)}
+  #keypad button.util{font-size:20px; color:var(--ink-dim)}
+  #keypad button.go{background:#1d4b74; border-color:#2d6da3; color:#dbeeff; font-size:20px}
+  #keypad button.go:hover{background:#245a8a}
+  #keypad button:disabled{opacity:.35}
+
+  .controls{margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; justify-content:center}
+  #primary{min-width:132px}
+  .runstats{
+    margin-top:26px; margin-bottom:20px; color:var(--ink-dim); font-size:13px;
+    font-variant-numeric:tabular-nums; letter-spacing:.03em; text-align:center;
+  }
+
+  /* ---------- heatmap ---------- */
+  #stats{display:none}
+  #stats h2{font-size:13px; font-weight:600; color:var(--ink-dim); margin:0 0 12px; letter-spacing:.05em; text-transform:uppercase}
+  .grid-wrap{overflow-x:auto; padding-bottom:8px; -webkit-overflow-scrolling:touch}
+  table.heat{border-collapse:separate; border-spacing:3px; margin:0 auto}
+  table.heat th{
+    font-size:var(--cellfont); font-weight:600; color:var(--ink-dim);
+    min-width:var(--cell); height:24px; font-variant-numeric:tabular-nums; padding:0;
+  }
+  table.heat td{
+    width:var(--cell); height:var(--cell); min-width:var(--cell); border-radius:6px;
+    text-align:center; vertical-align:middle; padding:0;
+    font-size:var(--cellfont); font-variant-numeric:tabular-nums; color:#0e1319; font-weight:600;
+    background:var(--panel-2);
+  }
+  table.heat td.untested{color:#5b6a7d; background:var(--panel-2); font-weight:400}
+  .legend{display:flex; align-items:center; gap:10px; margin:16px 0 4px; font-size:13px; color:var(--ink-dim); flex-wrap:wrap}
+  .legend .bar{height:12px; width:180px; border-radius:6px;
+    background:linear-gradient(90deg,#c8563f,#d98a3a,#d6c341,#7bc25e,#2fb37a)}
+  .legend .chip{display:inline-block;width:12px;height:12px;border-radius:3px;background:var(--panel-2);border:1px solid var(--line);vertical-align:-1px;margin-right:5px}
+  .summary{display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:10px; margin:22px 0}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px}
+  .card .v{font-size:23px; font-weight:600; font-variant-numeric:tabular-nums}
+  .card .k{font-size:12px; color:var(--ink-dim); letter-spacing:.03em}
+  .worst{font-size:14px; color:var(--ink-dim); line-height:1.9}
+  .worst b{color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums}
+  .note{font-size:13px; color:var(--ink-dim); margin-top:18px; max-width:660px}
+  .danger{margin:22px 0 40px}
+  .danger button{border-color:#4a2b2b; color:#e0a29a; background:transparent}
+  .danger button:hover{background:#33201f}
+  #tip{
+    position:fixed; pointer-events:none; z-index:20; background:#0b0f14; color:var(--ink);
+    border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-size:12.5px;
+    line-height:1.45; white-space:nowrap; opacity:0; transition:opacity .1s;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Multiplication facts</h1>
+  <select id="range" aria-label="Practice range">
+    <option value="9">up to 9 &times; 9</option>
+    <option value="10">up to 10 &times; 10</option>
+    <option value="12">up to 12 &times; 12</option>
+    <option value="15">up to 15 &times; 15</option>
+    <option value="20">up to 20 &times; 20</option>
+  </select>
+  <button id="toggleView" class="btn-quiet">Progress</button>
+</header>
+
+<main>
+  <section id="practice">
+    <div class="problem"><span id="pa">3</span> <span class="eq">&times;</span> <span id="pb">4</span> <span class="eq">=</span></div>
+    <input id="answer" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off"
+           autocorrect="off" spellcheck="false" aria-label="Your answer">
+    <div id="feedback"></div>
+
+    <div id="keypad">
+      <button data-d="7">7</button><button data-d="8">8</button><button data-d="9">9</button>
+      <button data-d="4">4</button><button data-d="5">5</button><button data-d="6">6</button>
+      <button data-d="1">1</button><button data-d="2">2</button><button data-d="3">3</button>
+      <button class="util" data-act="del" aria-label="Delete">&#9003;</button>
+      <button data-d="0">0</button>
+      <button class="go" data-act="go" aria-label="Enter">Enter</button>
+    </div>
+
+    <div class="controls">
+      <button id="primary">Show me</button>
+      <button id="kpToggle" class="btn-quiet">Keypad</button>
+    </div>
+    <div class="runstats" id="runstats"></div>
+  </section>
+
+  <section id="stats">
+    <h2>Facility heatmap</h2>
+    <div class="grid-wrap"><table class="heat" id="heat"></table></div>
+    <div class="legend">
+      <span>Still effortful</span><span class="bar"></span><span>Automatic</span>
+      <span style="margin-left:14px"><span class="chip"></span>not practiced yet</span>
+    </div>
+    <div class="summary" id="summary"></div>
+    <h2>Needs the most work</h2>
+    <div class="worst" id="worst"></div>
+    <p class="note">Facility blends how reliably you get a fact right on the first try with how quickly you
+      answer it. Answers under about 1.5&nbsp;s count as fully automatic; past about 6&nbsp;s the fact is
+      probably being computed rather than recalled. Getting it right on the second try earns partial
+      credit &mdash; less than knowing it outright, more than not knowing it &mdash; and only unaided
+      first-try answers are timed, since a retry measures re-calculation rather than recall. Only your
+      last 6 encounters with each fact count, so old struggles fade as you improve. Facts you know least
+      well come up more often. Results for facts outside the current range are kept &mdash; widen the
+      range to see them again.</p>
+    <div class="danger"><button id="reset">Erase all progress</button></div>
+  </section>
+</main>
+
+<div id="tip"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ===================== storage ===================== */
+  const KEY = "mathfacts.mult.v1";
+  const WINDOW = 6;          // encounters per fact that count toward facility
+  const FAST_MS = 1500;      // at or below this => fully automatic
+  const SLOW_MS = 6000;      // at or above this => no speed credit
+  const SECOND_TRY = 0.4;    // credit for getting it right on the second attempt
+  const NEUTRAL_SPEED = 0.4; // assumed speed when there is no clean first-try solve to time
+  const ALLOWED_MAX = [9,10,12,15,20];
+
+  let db = load();
+
+  function blank(){
+    return { facts:{}, totals:{ asked:0, firstTry:0, timeMs:0, timed:0 },
+             settings:{ max:9, keypad:null } };
+  }
+  function load(){
+    try{
+      const raw = localStorage.getItem(KEY);
+      if(!raw) return blank();
+      const d = JSON.parse(raw);
+      if(!d || typeof d !== "object" || !d.facts) return blank();
+      if(!d.totals) d.totals = blank().totals;
+      if(!d.settings) d.settings = blank().settings;
+      if(ALLOWED_MAX.indexOf(d.settings.max) < 0) d.settings.max = 9;
+      return d;
+    }catch(e){ return blank(); }
+  }
+  let saveTimer = null;
+  function save(){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flush, 120);
+  }
+  function flush(){
+    try{ localStorage.setItem(KEY, JSON.stringify(db)); }catch(e){}
+  }
+
+  const MAX = () => db.settings.max;
+  const key = (a,b) => a + "x" + b;
+  function history(a,b){
+    const k = key(a,b);
+    if(!db.facts[k]) db.facts[k] = [];
+    return db.facts[k];
+  }
+
+  /* ===================== facility ===================== */
+  const clamp = (v,lo,hi) => v < lo ? lo : v > hi ? hi : v;
+  function median(sorted){
+    return sorted.length % 2
+      ? sorted[(sorted.length-1)/2]
+      : (sorted[sorted.length/2 - 1] + sorted[sorted.length/2]) / 2;
+  }
+
+  // per-encounter credit: 1 first try, SECOND_TRY on the retry, 0 otherwise.
+  // (older saved records only stored a boolean)
+  function scoreOf(e){
+    return typeof e.s === "number" ? e.s : (e.ok ? 1 : 0);
+  }
+  const isCleanSolve = e => scoreOf(e) === 1 && e.ms > 0;
+
+  // null when the fact has never been attempted
+  function facility(a,b){
+    const h = (db.facts[key(a,b)] || []).slice(-WINDOW);
+    if(!h.length) return null;
+    const accuracy = h.reduce((s,e) => s + scoreOf(e), 0) / h.length;
+    // only unaided first-try solves are meaningful evidence about speed
+    const times = h.filter(isCleanSolve).map(e => e.ms).sort((x,y) => x-y);
+    const speed = times.length
+      ? clamp((SLOW_MS - median(times)) / (SLOW_MS - FAST_MS), 0, 1)
+      : NEUTRAL_SPEED;   // no evidence either way; don't assume the worst
+    // accuracy gates everything; speed scales the remainder
+    return 100 * accuracy * (0.35 + 0.65 * speed);
+  }
+  function medianMs(a,b){
+    const h = (db.facts[key(a,b)] || []).slice(-WINDOW).filter(isCleanSolve);
+    if(!h.length) return null;
+    return median(h.map(e => e.ms).sort((x,y) => x-y));
+  }
+
+  /* ===================== problem selection ===================== */
+  let lastKey = null;
+
+  function pick(){
+    const n = MAX(), pool = [];
+    let total = 0;
+    for(let a=1;a<=n;a++){
+      for(let b=1;b<=n;b++){
+        if(key(a,b) === lastKey) continue;
+        const f = facility(a,b);
+        // untested facts are attractive; weak facts more so than strong ones
+        const w = f === null ? 4 : 0.5 + 3.5 * Math.pow(1 - f/100, 1.5);
+        total += w;
+        pool.push({a:a, b:b, w:total});
+      }
+    }
+    const r = Math.random() * total;
+    for(let i=0;i<pool.length;i++){ if(r <= pool[i].w) return pool[i]; }
+    return pool[pool.length-1];
+  }
+
+  /* ===================== elements ===================== */
+  const el = {
+    pa: document.getElementById("pa"),
+    pb: document.getElementById("pb"),
+    ans: document.getElementById("answer"),
+    fb: document.getElementById("feedback"),
+    primary: document.getElementById("primary"),
+    keypad: document.getElementById("keypad"),
+    kpToggle: document.getElementById("kpToggle"),
+    range: document.getElementById("range"),
+    run: document.getElementById("runstats"),
+    practice: document.getElementById("practice"),
+    stats: document.getElementById("stats"),
+    toggle: document.getElementById("toggleView")
+  };
+
+  const PRAISE = ["Correct.","Right.","Yes.","Got it.","Correct.","That's it."];
+  const CONTINUE_HINT = '<span class="hint">Press Enter (or Continue) for the next one.</span>';
+
+  let cur = null;           // {a,b,answer}
+  let t0 = 0;               // hidden timer start
+  let tries = 0;
+  let state = "asking";     // asking | waiting
+  let session = { asked:0, firstTry:0 };
+
+  /* ===================== practice loop ===================== */
+  function nextProblem(){
+    cur = pick();
+    cur.answer = cur.a * cur.b;
+    lastKey = key(cur.a, cur.b);
+    tries = 0;
+    state = "asking";
+    el.pa.textContent = cur.a;
+    el.pb.textContent = cur.b;
+    el.fb.textContent = "";
+    el.fb.className = "";
+    el.ans.value = "";
+    el.ans.disabled = false;
+    el.ans.className = "";
+    el.primary.textContent = "Show me";
+    setKeypadEnabled(true);
+    focusAnswer();
+    t0 = performance.now();   // timer runs, never shown
+  }
+
+  function focusAnswer(){
+    // don't summon the on-screen OS keyboard when the built-in keypad is showing
+    if(!keypadOn()) { try{ el.ans.focus(); }catch(e){} }
+  }
+
+  function record(score, ms){
+    const clean = score === 1;
+    const h = history(cur.a, cur.b);
+    h.push({ s:score, ms: clean ? Math.round(ms) : 0, at: Date.now() });
+    if(h.length > 24) h.splice(0, h.length - 24);
+    db.totals.asked++;
+    session.asked++;
+    if(clean){
+      db.totals.firstTry++;
+      session.firstTry++;
+      db.totals.timeMs += ms;
+      db.totals.timed++;
+    }
+    save();
+    drawRun();
+  }
+
+  function say(html, cls){
+    el.fb.className = cls || "";
+    el.fb.innerHTML = html;
+  }
+
+  function toWaiting(){
+    state = "waiting";
+    el.ans.disabled = true;
+    el.primary.textContent = "Continue →";
+    setKeypadEnabled(false);
+  }
+
+  function reveal(lead){
+    toWaiting();
+    say(lead + '<span class="reveal"> ' + cur.a + ' &times; ' + cur.b + ' = ' + cur.answer + '</span>'
+        + CONTINUE_HINT, "fb-neutral");
+  }
+
+  function submit(){
+    if(state !== "asking") return;
+    const raw = el.ans.value.trim();
+    if(raw === "") return;
+    const val = parseInt(raw, 10);
+    if(isNaN(val)){ el.ans.value = ""; return; }
+
+    const elapsed = performance.now() - t0;
+
+    if(val === cur.answer){
+      record(tries === 0 ? 1 : SECOND_TRY, tries === 0 ? elapsed : 0);
+      el.ans.className = "is-right";
+      toWaiting();
+      say((tries === 0 ? PRAISE[Math.floor(Math.random()*PRAISE.length)] : "Correct.")
+          + CONTINUE_HINT, "fb-good");
+      return;
+    }
+
+    tries++;
+    if(tries === 1){
+      el.ans.className = "is-wrong";
+      say("Not quite. Try once more.", "fb-bad");
+      el.ans.value = "";
+      focusAnswer();
+      setTimeout(function(){ if(state === "asking") el.ans.className = ""; }, 320);
+    }else{
+      record(0, 0);
+      reveal("Not quite.");
+    }
+  }
+
+  function giveUp(){
+    if(state !== "asking") return;
+    record(0, 0);
+    reveal("");
+  }
+
+  // one action for the big button, the keypad Enter key and the Enter key itself
+  function primaryAction(){
+    if(state === "waiting") nextProblem();
+    else giveUp();
+  }
+
+  function drawRun(){
+    el.run.textContent = session.asked
+      ? session.firstTry + " / " + session.asked + " first try this session"
+      : "";
+  }
+
+  /* ===================== input: keyboard ===================== */
+  el.ans.addEventListener("keydown", function(e){
+    if(e.key === "Enter"){
+      e.preventDefault();
+      e.stopPropagation();   // don't also trigger the "continue" handler below
+      submit();
+    }
+  });
+  el.ans.addEventListener("input", function(){
+    const cleaned = el.ans.value.replace(/[^0-9]/g,"").slice(0,4);
+    if(cleaned !== el.ans.value) el.ans.value = cleaned;
+  });
+  document.addEventListener("keydown", function(e){
+    if(e.repeat) return;
+    if(el.stats.style.display === "block") return;
+    if(state === "waiting"){
+      if(e.key === "Enter" || e.key === " "){ e.preventDefault(); nextProblem(); }
+      return;
+    }
+    // keypad mode leaves the box unfocused; keep a physical keyboard working anyway
+    if(state === "asking" && document.activeElement !== el.ans){
+      if(e.key >= "0" && e.key <= "9" && e.key.length === 1){
+        e.preventDefault();
+        if(el.ans.value.length < 4) el.ans.value += e.key;
+      }else if(e.key === "Backspace"){
+        e.preventDefault(); el.ans.value = el.ans.value.slice(0,-1);
+      }else if(e.key === "Enter"){
+        e.preventDefault(); submit();
+      }
+    }
+  });
+
+  /* ===================== input: on-screen keypad ===================== */
+  function keypadOn(){ return el.keypad.classList.contains("on"); }
+  function setKeypadEnabled(on){
+    el.keypad.querySelectorAll("button").forEach(function(b){
+      b.disabled = !on && b.dataset.act !== "go";
+    });
+  }
+  function applyKeypad(on){
+    el.keypad.classList.toggle("on", !!on);
+    el.kpToggle.textContent = on ? "Hide keypad" : "Keypad";
+    // suppress the device keyboard while the built-in pad is up
+    el.ans.setAttribute("inputmode", on ? "none" : "numeric");
+    if(on){ try{ el.ans.blur(); }catch(e){} } else { focusAnswer(); }
+    db.settings.keypad = !!on;
+    save();
+  }
+  el.kpToggle.addEventListener("click", function(){ applyKeypad(!keypadOn()); });
+
+  el.keypad.addEventListener("mousedown", function(e){ e.preventDefault(); }); // keep focus/caret steady
+  el.keypad.addEventListener("click", function(e){
+    const b = e.target.closest("button");
+    if(!b) return;
+    if(b.dataset.act === "go"){ state === "waiting" ? nextProblem() : submit(); return; }
+    if(state !== "asking") return;
+    if(b.dataset.act === "del"){ el.ans.value = el.ans.value.slice(0,-1); return; }
+    if(el.ans.value.length < 4) el.ans.value += b.dataset.d;
+  });
+
+  el.primary.addEventListener("click", primaryAction);
+
+  /* ===================== range ===================== */
+  el.range.value = String(db.settings.max);
+  el.range.addEventListener("change", function(){
+    let v = parseInt(el.range.value, 10);
+    if(ALLOWED_MAX.indexOf(v) < 0) v = 9;
+    db.settings.max = v;
+    save();
+    lastKey = null;
+    nextProblem();
+    if(statsVisible()){ hideTip(); drawHeat(); drawSummary(); }  // redraw in place
+  });
+  function statsVisible(){ return el.stats.style.display === "block"; }
+
+  /* ===================== heatmap ===================== */
+  // effortful -> automatic
+  const STOPS = [[200,86,63],[217,138,58],[214,195,65],[123,194,94],[47,179,122]];
+  function heatColor(f){
+    const x = clamp(f,0,100)/100 * (STOPS.length - 1);
+    const i = Math.min(Math.floor(x), STOPS.length - 2);
+    const t = x - i, A = STOPS[i], B = STOPS[i+1];
+    return "rgb(" + [0,1,2].map(j => Math.round(A[j] + (B[j]-A[j]) * t)).join(",") + ")";
+  }
+
+  const tip = document.getElementById("tip");
+  function showTip(x, y, html){
+    tip.innerHTML = html;
+    tip.style.opacity = "1";
+    const r = tip.getBoundingClientRect();
+    let px = x + 14, py = y - r.height - 12;
+    if(px + r.width > innerWidth - 8) px = Math.max(8, innerWidth - r.width - 8);
+    if(py < 8) py = y + 20;
+    tip.style.left = px + "px";
+    tip.style.top = py + "px";
+  }
+  function hideTip(){ tip.style.opacity = "0"; }
+
+  function tipHtml(a,b){
+    const h = db.facts[key(a,b)] || [];
+    const recent = h.slice(-WINDOW);
+    const f = facility(a,b), med = medianMs(a,b);
+    let s = "<b>" + a + " &times; " + b + " = " + (a*b) + "</b>";
+    if(f === null) return s + "<br>not practiced yet";
+    const first  = recent.filter(e => scoreOf(e) === 1).length;
+    const second = recent.filter(e => { const v = scoreOf(e); return v > 0 && v < 1; }).length;
+    s += "<br>facility " + Math.round(f) + " / 100";
+    s += "<br>" + first + " of " + recent.length + " right on first try";
+    if(second) s += "<br>" + second + " right on the retry";
+    s += med ? "<br>typical " + (med/1000).toFixed(1) + " s" : "<br>no clean solve yet";
+    s += "<br>" + h.length + " total encounter" + (h.length === 1 ? "" : "s");
+    return s;
+  }
+
+  function drawHeat(){
+    const n = MAX();
+    const size = n <= 9 ? 44 : n <= 12 ? 38 : n <= 15 ? 32 : 27;
+    const font = n <= 12 ? 13 : n <= 15 ? 12 : 11;
+    document.documentElement.style.setProperty("--cell", size + "px");
+    document.documentElement.style.setProperty("--cellfont", font + "px");
+
+    const t = document.getElementById("heat");
+    let html = "<tr><th></th>";
+    for(let b=1;b<=n;b++) html += "<th>" + b + "</th>";
+    html += "</tr>";
+    for(let a=1;a<=n;a++){
+      html += "<tr><th>" + a + "</th>";
+      for(let b=1;b<=n;b++){
+        const f = facility(a,b);
+        html += f === null
+          ? '<td class="untested" data-a="'+a+'" data-b="'+b+'">&middot;</td>'
+          : '<td data-a="'+a+'" data-b="'+b+'" style="background:'+heatColor(f)+'">'+Math.round(f)+'</td>';
+      }
+      html += "</tr>";
+    }
+    t.innerHTML = html;
+  }
+
+  const heatTable = document.getElementById("heat");
+  heatTable.addEventListener("mousemove", function(e){
+    const td = e.target.closest("td");
+    if(!td){ hideTip(); return; }
+    showTip(e.clientX, e.clientY, tipHtml(+td.dataset.a, +td.dataset.b));
+  });
+  heatTable.addEventListener("mouseleave", hideTip);
+  heatTable.addEventListener("click", function(e){          // touch: tap a cell for detail
+    const td = e.target.closest("td");
+    if(!td) return;
+    const r = td.getBoundingClientRect();
+    showTip(r.left + r.width/2, r.top, tipHtml(+td.dataset.a, +td.dataset.b));
+    clearTimeout(showTip._t);
+    showTip._t = setTimeout(hideTip, 2600);
+  });
+
+  function drawSummary(){
+    const n = MAX(), count = n*n;
+    let sum = 0, tested = 0, untested = 0;
+    const list = [];
+    for(let a=1;a<=n;a++) for(let b=1;b<=n;b++){
+      const f = facility(a,b);
+      if(f === null){ untested++; }
+      else { sum += f; tested++; list.push({a:a,b:b,f:f}); }
+    }
+    const avg = tested ? sum/tested : 0;
+    const mastered = list.filter(x => x.f >= 80).length;
+    const acc = db.totals.asked ? Math.round(100 * db.totals.firstTry / db.totals.asked) : 0;
+    const avgT = db.totals.timed ? (db.totals.timeMs / db.totals.timed / 1000).toFixed(1) + " s" : "–";
+
+    document.getElementById("summary").innerHTML =
+      card(Math.round(avg), "average facility (in range)") +
+      card(mastered + " / " + count, "at 80+ facility") +
+      card(untested, "not yet practiced") +
+      card(acc + "%", "first-try accuracy (all time)") +
+      card(avgT, "average time when correct") +
+      card(db.totals.asked, "problems answered");
+
+    list.sort((x,y) => x.f - y.f);
+    const worst = list.slice(0, 10);
+    document.getElementById("worst").innerHTML = worst.length
+      ? worst.map(x => "<b>" + x.a + " &times; " + x.b + "</b> &mdash; facility " + Math.round(x.f)).join("<br>")
+      : "Nothing yet &mdash; answer a few problems first.";
+  }
+  function card(v,k){
+    return '<div class="card"><div class="v">' + v + '</div><div class="k">' + k + "</div></div>";
+  }
+
+  /* ===================== view toggle ===================== */
+  function showStats(on){
+    el.stats.style.display = on ? "block" : "none";
+    el.practice.style.display = on ? "none" : "flex";
+    el.toggle.textContent = on ? "Back to practice" : "Progress";
+    hideTip();
+    if(on){ drawHeat(); drawSummary(); }
+    else if(state === "asking"){
+      focusAnswer();
+      t0 = performance.now();   // time spent reading stats doesn't count against you
+    }
+  }
+  el.toggle.addEventListener("click", function(){
+    showStats(el.stats.style.display !== "block");
+  });
+
+  document.getElementById("reset").addEventListener("click", function(){
+    if(!confirm("Erase all stored results for every fact? This cannot be undone.")) return;
+    const keep = db.settings;
+    db = blank();
+    db.settings = keep;
+    flush();
+    session = { asked:0, firstTry:0 };
+    drawHeat(); drawSummary(); drawRun();
+  });
+
+  /* ===================== go ===================== */
+  const touch = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || false;
+  applyKeypad(db.settings.keypad === null || db.settings.keypad === undefined ? touch : db.settings.keypad);
+  drawRun();
+  nextProblem();
+  window.addEventListener("beforeunload", flush);
+
+  // exposed for testing
+  window.__mf = { facility:facility, pick:pick, heatColor:heatColor,
+                  db:function(){return db;}, submit:submit, next:nextProblem,
+                  el:el, state:function(){return state;} };
+})();
+</script>
+</body>
+</html>

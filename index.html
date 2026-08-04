@@ -25,6 +25,7 @@
     font:16px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
     display:flex; flex-direction:column; align-items:center;
     -webkit-text-size-adjust:100%; -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;   /* kill double-tap-to-zoom and its activation delay page-wide */
   }
   header{
     width:100%; max-width:860px; display:flex; align-items:center; gap:10px;
@@ -75,19 +76,25 @@
 
   /* keypad */
   #keypad{
-    display:none; grid-template-columns:repeat(3,1fr); gap:9px;
-    width:min(300px,86vw); margin-top:18px;
+    display:none; grid-template-columns:repeat(3,1fr); gap:12px;
+    width:min(340px,94vw); margin-top:18px;
   }
   #keypad.on{display:grid}
   #keypad button{
-    font-size:26px; font-weight:400; padding:0; height:58px; border-radius:12px;
+    font-size:29px; font-weight:400; padding:0; height:68px; border-radius:14px;
     background:var(--panel); font-variant-numeric:tabular-nums; touch-action:manipulation;
+    transition:background .07s linear, transform .07s ease-out;
   }
+  @media (max-height:620px){ #keypad button{height:56px; font-size:25px} }
   #keypad button:hover{background:var(--panel-2)}
-  #keypad button.util{font-size:20px; color:var(--ink-dim)}
+  #keypad button.util{font-size:22px; color:var(--ink-dim)}
   #keypad button.go{background:#1d4b74; border-color:#2d6da3; color:#dbeeff; font-size:20px}
   #keypad button.go:hover{background:#245a8a}
   #keypad button:disabled{opacity:.35}
+  /* explicit press feedback: :active is unreliable once pointerdown is preventDefault()ed */
+  #keypad button.hit{background:#3b4a5e; border-color:#4d6076; transform:scale(.94)}
+  #keypad button.go.hit{background:#2f83c4; border-color:#4a9bd8}
+  #primary.hit{background:#3b4a5e; transform:scale(.97)}
 
   .controls{margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; justify-content:center}
   #primary{min-width:132px}
@@ -320,6 +327,7 @@
   let t0 = 0;               // hidden timer start
   let tries = 0;
   let state = "asking";     // asking | waiting
+  let waitReason = null;    // "correct" | "reveal" — governs whether digits stay live
   let session = { asked:0, firstTry:0 };
 
   /* ===================== practice loop ===================== */
@@ -329,6 +337,7 @@
     lastKey = key(cur.a, cur.b);
     tries = 0;
     state = "asking";
+    waitReason = null;
     el.pa.textContent = cur.a;
     el.pb.textContent = cur.b;
     el.fb.textContent = "";
@@ -337,7 +346,7 @@
     el.ans.disabled = false;
     el.ans.className = "";
     el.primary.textContent = "Show me";
-    setKeypadEnabled(true);
+    setDigitsEnabled(true);
     focusAnswer();
     t0 = performance.now();   // timer runs, never shown
   }
@@ -369,15 +378,17 @@
     el.fb.innerHTML = html;
   }
 
-  function toWaiting(){
+  function toWaiting(reason){
     state = "waiting";
+    waitReason = reason;
     el.ans.disabled = true;
     el.primary.textContent = "Continue →";
-    setKeypadEnabled(false);
+    // after a reveal the digits go dim and inert, so the missed fact gets a deliberate beat
+    setDigitsEnabled(reason === "correct");
   }
 
   function reveal(lead){
-    toWaiting();
+    toWaiting("reveal");
     say(lead + '<span class="reveal"> ' + cur.a + ' &times; ' + cur.b + ' = ' + cur.answer + '</span>'
         + CONTINUE_HINT, "fb-neutral");
   }
@@ -394,7 +405,7 @@
     if(val === cur.answer){
       record(tries === 0 ? 1 : SECOND_TRY, tries === 0 ? elapsed : 0);
       el.ans.className = "is-right";
-      toWaiting();
+      toWaiting("correct");
       say((tries === 0 ? PRAISE[Math.floor(Math.random()*PRAISE.length)] : "Correct.")
           + CONTINUE_HINT, "fb-good");
       return;
@@ -465,7 +476,9 @@
 
   /* ===================== input: on-screen keypad ===================== */
   function keypadOn(){ return el.keypad.classList.contains("on"); }
-  function setKeypadEnabled(on){
+  // digits/backspace are live while answering, and also right after a correct answer
+  // (so a tap carries straight into the next problem). They stay dead on a reveal.
+  function setDigitsEnabled(on){
     el.keypad.querySelectorAll("button").forEach(function(b){
       b.disabled = !on && b.dataset.act !== "go";
     });
@@ -481,17 +494,66 @@
   }
   el.kpToggle.addEventListener("click", function(){ applyKeypad(!keypadOn()); });
 
-  el.keypad.addEventListener("mousedown", function(e){ e.preventDefault(); }); // keep focus/caret steady
-  el.keypad.addEventListener("click", function(e){
-    const b = e.target.closest("button");
-    if(!b) return;
-    if(b.dataset.act === "go"){ state === "waiting" ? nextProblem() : submit(); return; }
+  function keyAction(b){
+    const act = b.dataset.act;
+    if(act === "go"){ state === "waiting" ? nextProblem() : submit(); return; }
+    if(act === "del"){
+      if(state === "asking") el.ans.value = el.ans.value.slice(0,-1);
+      return;
+    }
+    // a digit tapped right after a correct answer starts the next problem and counts
+    if(state === "waiting" && waitReason === "correct") nextProblem();
     if(state !== "asking") return;
-    if(b.dataset.act === "del"){ el.ans.value = el.ans.value.slice(0,-1); return; }
     if(el.ans.value.length < 4) el.ans.value += b.dataset.d;
+  }
+
+  function flash(b){
+    b.classList.add("hit");
+    setTimeout(function(){ b.classList.remove("hit"); }, 110);
+    if(navigator.vibrate){ try{ navigator.vibrate(8); }catch(e){} }
+  }
+
+  // Touch taps are dispatched on pointerdown, not click. A synthesized click is withheld
+  // whenever the finger drifts a few pixels or the browser suspects a scroll, which is what
+  // made the pad feel like it was ignoring presses.
+  let sawPointer = false;
+  if(window.PointerEvent){
+    el.keypad.addEventListener("pointerdown", function(e){
+      const b = e.target.closest("button");
+      if(!b || b.disabled) return;
+      sawPointer = true;
+      e.preventDefault();      // suppress the follow-up click and keep focus off the input
+      flash(b);
+      keyAction(b);
+    });
+  }
+  el.keypad.addEventListener("click", function(e){
+    if(sawPointer) return;     // pointer events are driving; ignore the compatibility click
+    const b = e.target.closest("button");
+    if(!b || b.disabled) return;
+    flash(b);
+    keyAction(b);
   });
 
-  el.primary.addEventListener("click", primaryAction);
+  // same treatment for the big action button, with a guard so pointer + click can't double-fire
+  (function(node, fn){
+    let last = 0;
+    function run(){
+      const now = Date.now();
+      if(now - last < 350) return;
+      last = now;
+      flash(node);
+      fn();
+    }
+    if(window.PointerEvent){
+      node.addEventListener("pointerdown", function(e){
+        if(e.isPrimary === false) return;
+        e.preventDefault();
+        run();
+      });
+    }
+    node.addEventListener("click", run);   // keeps keyboard activation working
+  })(el.primary, primaryAction);
 
   /* ===================== range ===================== */
   el.range.value = String(db.settings.max);

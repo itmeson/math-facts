@@ -130,6 +130,20 @@
   .worst{font-size:14px; color:var(--ink-dim); line-height:1.9}
   .worst b{color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums}
   .note{font-size:13px; color:var(--ink-dim); margin-top:18px; max-width:660px}
+
+  /* progress data */
+  .data{border-top:1px solid var(--line); margin-top:30px; padding-top:22px}
+  .data .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px}
+  .data label{font-size:13px; color:var(--ink-dim); letter-spacing:.03em}
+  #student{
+    font:inherit; font-size:15px; color:var(--ink); background:var(--panel);
+    border:1px solid var(--line); border-radius:8px; padding:8px 11px; width:230px; outline:none;
+  }
+  #student:focus{border-color:var(--accent)}
+  #ioMsg{font-size:13px; min-height:1.5em; margin-top:4px}
+  #ioMsg.err{color:var(--bad)}
+  #ioMsg.good{color:var(--good)}
+  #ioMsg.info{color:var(--ink-dim)}
   .danger{margin:22px 0 40px}
   .danger button{border-color:#4a2b2b; color:#e0a29a; background:transparent}
   .danger button:hover{background:#33201f}
@@ -195,7 +209,27 @@
       last 6 encounters with each fact count, so old struggles fade as you improve. Facts you know least
       well come up more often. Results for facts outside the current range are kept &mdash; widen the
       range to see them again.</p>
-    <div class="danger"><button id="reset">Erase all progress</button></div>
+    <div class="data">
+      <h2>Progress data</h2>
+      <div class="row">
+        <label for="student">Name</label>
+        <input id="student" type="text" autocomplete="name" spellcheck="false"
+               placeholder="for the file you hand in" aria-label="Your name">
+      </div>
+      <div class="row">
+        <button id="doExport">Save a copy</button>
+        <button id="doMerge" class="btn-quiet">Load &amp; combine</button>
+        <button id="doReplace" class="btn-quiet">Load &amp; replace</button>
+        <input id="pickFile" type="file" accept=".json,application/json" style="display:none">
+      </div>
+      <div id="ioMsg"></div>
+      <p class="note">Progress lives in this browser on this device only. <b>Save a copy</b> writes a
+        file you can put in a cloud folder, hand in, or move to another device. <b>Load &amp; combine</b>
+        merges a saved file into what's already here &mdash; practising on a phone and a laptop and
+        combining both is safe, and nothing gets counted twice. <b>Load &amp; replace</b> discards
+        what's here first, which is what you want on a shared or borrowed device.</p>
+      <div class="danger"><button id="reset">Erase all progress</button></div>
+    </div>
   </section>
 </main>
 
@@ -216,9 +250,11 @@
 
   let db = load();
 
+  const SCHEMA = 1;          // export format version; import refuses anything it doesn't know
+
   function blank(){
-    return { facts:{}, totals:{ asked:0, firstTry:0, timeMs:0, timed:0 },
-             settings:{ max:9, keypad:null } };
+    return { facts:{}, totals:{ asked:0, firstTry:0, timeMs:0, timed:0, scoped:false },
+             settings:{ max:9, keypad:null, student:"" } };
   }
   function load(){
     try{
@@ -229,6 +265,7 @@
       if(!d.totals) d.totals = blank().totals;
       if(!d.settings) d.settings = blank().settings;
       if(ALLOWED_MAX.indexOf(d.settings.max) < 0) d.settings.max = 9;
+      if(typeof d.settings.student !== "string") d.settings.student = "";
       return d;
     }catch(e){ return blank(); }
   }
@@ -317,7 +354,13 @@
     run: document.getElementById("runstats"),
     practice: document.getElementById("practice"),
     stats: document.getElementById("stats"),
-    toggle: document.getElementById("toggleView")
+    toggle: document.getElementById("toggleView"),
+    student: document.getElementById("student"),
+    ioMsg: document.getElementById("ioMsg"),
+    pickFile: document.getElementById("pickFile"),
+    doExport: document.getElementById("doExport"),
+    doMerge: document.getElementById("doMerge"),
+    doReplace: document.getElementById("doReplace")
   };
 
   const PRAISE = ["Correct.","Right.","Yes.","Got it.","Correct.","That's it."];
@@ -661,13 +704,15 @@
     const acc = db.totals.asked ? Math.round(100 * db.totals.firstTry / db.totals.asked) : 0;
     const avgT = db.totals.timed ? (db.totals.timeMs / db.totals.timed / 1000).toFixed(1) + " s" : "–";
 
+    // after a merge these are derived from retained history, not lifetime counters
+    const scope = db.totals.scoped ? "retained history" : "all time";
     document.getElementById("summary").innerHTML =
       card(Math.round(avg), "average facility (in range)") +
       card(mastered + " / " + count, "at 80+ facility") +
       card(untested, "not yet practiced") +
-      card(acc + "%", "first-try accuracy (all time)") +
+      card(acc + "%", "first-try accuracy (" + scope + ")") +
       card(avgT, "average time when correct") +
-      card(db.totals.asked, "problems answered");
+      card(db.totals.asked, "problems answered (" + scope + ")");
 
     list.sort((x,y) => x.f - y.f);
     const worst = list.slice(0, 10);
@@ -678,6 +723,198 @@
   function card(v,k){
     return '<div class="card"><div class="v">' + v + '</div><div class="k">' + k + "</div></div>";
   }
+
+  /* ===================== export / import ===================== */
+  const MAX_KEPT = 24;   // encounters retained per fact
+
+  function ioSay(msg, cls){
+    el.ioMsg.className = cls || "info";
+    el.ioMsg.textContent = msg;
+  }
+
+  function slug(s){
+    return (s || "student").toLowerCase().replace(/[^a-z0-9]+/g,"-")
+      .replace(/^-+|-+$/g,"").slice(0,40) || "student";
+  }
+  function today(){
+    const d = new Date(), p = n => String(n).padStart(2,"0");
+    return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate());
+  }
+
+  function setStudent(name){
+    db.settings.student = (name || "").trim().slice(0,60);
+    el.student.value = db.settings.student;
+    save();
+  }
+  el.student.addEventListener("change", function(){ setStudent(el.student.value); });
+  el.student.addEventListener("blur",   function(){ setStudent(el.student.value); });
+
+  function doExport(){
+    // ask once; after that the name is already on file and we stay out of the way
+    if(!db.settings.student){
+      const entered = prompt("Your name — this labels the file for your teacher:", "");
+      if(entered === null) return;                       // cancelled
+      if(!entered.trim()){ ioSay("Need a name before saving a copy.", "err"); el.student.focus(); return; }
+      setStudent(entered);
+      flush();
+    }
+
+    const payload = {
+      app: "mathfacts",
+      schema: SCHEMA,
+      student: db.settings.student,
+      exported: new Date().toISOString(),
+      range: db.settings.max,
+      totals: db.totals,
+      facts: db.facts
+    };
+    const name = "mathfacts-" + slug(db.settings.student) + "-" + today() + ".json";
+    try{
+      const url = URL.createObjectURL(new Blob([JSON.stringify(payload)], {type:"application/json"}));
+      const a = document.createElement("a");
+      a.href = url; a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 5000);
+      ioSay("Saved " + name + " — check your downloads.", "good");
+    }catch(err){
+      ioSay("Could not save the file on this browser.", "err");
+    }
+  }
+
+  // accept only well-formed encounters, and normalise the older boolean form
+  function cleanRecords(arr){
+    if(!Array.isArray(arr)) return [];
+    const out = [];
+    for(const e of arr){
+      if(!e || typeof e !== "object") continue;
+      let s = typeof e.s === "number" ? e.s : (e.ok === true ? 1 : e.ok === false ? 0 : null);
+      if(s === null || !(s >= 0 && s <= 1)) continue;
+      const ms = typeof e.ms === "number" && isFinite(e.ms) && e.ms >= 0 ? Math.round(e.ms) : 0;
+      const at = typeof e.at === "number" && isFinite(e.at) && e.at > 0 ? e.at : 0;
+      out.push({ s:s, ms:ms, at:at });
+    }
+    return out;
+  }
+
+  function validKey(k){
+    const m = /^(\d{1,2})x(\d{1,2})$/.exec(k);
+    if(!m) return false;
+    const a = +m[1], b = +m[2];
+    return a >= 1 && a <= 20 && b >= 1 && b <= 20;
+  }
+
+  function parseImport(text){
+    let obj;
+    try{ obj = JSON.parse(text); }
+    catch(e){ throw new Error("That file isn't valid JSON."); }
+    if(!obj || typeof obj !== "object") throw new Error("That file isn't a progress file.");
+    if(obj.app !== "mathfacts") throw new Error("That file wasn't saved by this app.");
+    if(obj.schema !== SCHEMA)
+      throw new Error("That file is format " + obj.schema + "; this app reads " + SCHEMA + ".");
+    if(!obj.facts || typeof obj.facts !== "object") throw new Error("That file has no practice data.");
+    const facts = {};
+    let kept = 0;
+    for(const k in obj.facts){
+      if(!validKey(k)) continue;
+      const recs = cleanRecords(obj.facts[k]);
+      if(recs.length){ facts[k] = recs; kept += recs.length; }
+    }
+    if(!kept) throw new Error("That file has no readable practice data.");
+    return { student: typeof obj.student === "string" ? obj.student : "", facts:facts, encounters:kept };
+  }
+
+  // dedupe on the full triple so re-importing the same file is a no-op
+  function mergeFacts(incoming){
+    let added = 0;
+    for(const k in incoming){
+      const mine = db.facts[k] || [];
+      const seen = new Set(mine.map(e => scoreOf(e) + "|" + (e.ms||0) + "|" + (e.at||0)));
+      const merged = mine.slice();
+      for(const e of incoming[k]){
+        const sig = e.s + "|" + e.ms + "|" + e.at;
+        if(seen.has(sig)) continue;
+        seen.add(sig);
+        merged.push(e);
+        added++;
+      }
+      // ordering by time is what makes "the last 6" mean the last 6 across both devices
+      merged.sort(function(x,y){ return (x.at||0) - (y.at||0); });
+      db.facts[k] = merged.slice(-MAX_KEPT);
+    }
+    return added;
+  }
+
+  // running counters can't be merged without double-counting, so derive them from
+  // retained history instead and label them honestly
+  function recomputeTotals(){
+    let asked = 0, firstTry = 0, timeMs = 0, timed = 0;
+    for(const k in db.facts){
+      for(const e of db.facts[k]){
+        asked++;
+        if(scoreOf(e) === 1){
+          firstTry++;
+          if(e.ms > 0){ timeMs += e.ms; timed++; }
+        }
+      }
+    }
+    db.totals = { asked:asked, firstTry:firstTry, timeMs:timeMs, timed:timed, scoped:true };
+  }
+
+  let importMode = "merge";
+  function askForFile(mode){
+    importMode = mode;
+    if(mode === "replace" &&
+       !confirm("Replace all progress on this device with the file you pick?\n\nWhat's here now will be lost.")){
+      return;
+    }
+    el.pickFile.value = "";     // so picking the same file twice still fires
+    el.pickFile.click();
+  }
+  el.doExport.addEventListener("click", doExport);
+  el.doMerge.addEventListener("click", function(){ askForFile("merge"); });
+  el.doReplace.addEventListener("click", function(){ askForFile("replace"); });
+
+  el.pickFile.addEventListener("change", function(){
+    const f = el.pickFile.files && el.pickFile.files[0];
+    if(!f) return;
+    ioSay("Reading " + f.name + "…", "info");
+    const done = function(text){
+      let parsed;
+      try{ parsed = parseImport(text); }
+      catch(err){ ioSay(err.message, "err"); return; }
+
+      if(importMode === "replace"){
+        const keep = db.settings;
+        db = blank();
+        db.settings = keep;
+      }
+      const before = Object.keys(db.facts).length;
+      const added = mergeFacts(parsed.facts);
+      recomputeTotals();
+      if(!db.settings.student && parsed.student) setStudent(parsed.student);
+      flush();
+
+      const factCount = Object.keys(db.facts).length;
+      ioSay(importMode === "replace"
+        ? "Replaced. " + added + " encounters across " + factCount + " facts loaded."
+        : "Combined. " + added + " new encounter" + (added === 1 ? "" : "s") + " added"
+          + (added ? "" : " (this file was already included)")
+          + "; " + factCount + " facts on file"
+          + (factCount > before ? " (" + (factCount - before) + " new)" : "") + ".",
+        "good");
+      drawHeat(); drawSummary(); drawRun();
+    };
+
+    if(f.text){ f.text().then(done, function(){ ioSay("Could not read that file.", "err"); }); }
+    else{
+      const r = new FileReader();
+      r.onload = function(){ done(String(r.result)); };
+      r.onerror = function(){ ioSay("Could not read that file.", "err"); };
+      r.readAsText(f);
+    }
+  });
 
   /* ===================== view toggle ===================== */
   function showStats(on){
@@ -708,6 +945,7 @@
   /* ===================== go ===================== */
   const touch = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || false;
   applyKeypad(db.settings.keypad === null || db.settings.keypad === undefined ? touch : db.settings.keypad);
+  el.student.value = db.settings.student || "";
   drawRun();
   nextProblem();
   window.addEventListener("beforeunload", flush);
@@ -715,7 +953,10 @@
   // exposed for testing
   window.__mf = { facility:facility, pick:pick, heatColor:heatColor,
                   db:function(){return db;}, submit:submit, next:nextProblem,
-                  el:el, state:function(){return state;} };
+                  el:el, state:function(){return state;},
+                  parseImport:parseImport, mergeFacts:mergeFacts, cleanRecords:cleanRecords,
+                  recomputeTotals:recomputeTotals, slug:slug, scoreOf:scoreOf,
+                  setDb:function(d){ db = d; } };
 })();
 </script>
 </body>

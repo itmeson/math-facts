@@ -3,7 +3,7 @@
 A single-file practice app for building automaticity with multiplication facts. No build step, no
 dependencies, no server — open `index.html` in a browser and it works.
 
-**Live:** https://USERNAME.github.io/math-facts/
+**Live:** https://itmeson.github.io/math-facts/
 
 ## How it works
 
@@ -70,6 +70,53 @@ keypad preferences survive.
 
 Practice range is selectable up to 9×9, 10×10, 12×12, 15×15, or 20×20. Widening the range brings in
 new facts; narrowing it hides results without deleting them.
+
+## Saving, moving, and handing in progress
+
+The **Progress data** section at the bottom of the Progress page has three buttons.
+
+**Save a copy** writes `mathfacts-<name>-<date>.json`. The name is asked for once, then remembered.
+The file is plain, uncompressed JSON — open it in a text editor and you can read it.
+
+```json
+{
+  "app": "mathfacts", "schema": 1,
+  "student": "Sam R.", "exported": "2026-08-08T18:22:11.402Z", "range": 12,
+  "totals": { "asked": 431, "firstTry": 302, "timeMs": 812340, "timed": 302, "scoped": false },
+  "facts": { "7x8": [ { "s": 1, "ms": 2140, "at": 1754332911402 } ] }
+}
+```
+
+**Load & combine** merges a saved file into what's already on the device. Every encounter carries a
+timestamp, so the merge interleaves both histories in true time order and de-duplicates on the exact
+`(s, ms, at)` triple. Practising on a phone and a laptop and combining both is safe, importing the
+same file twice does nothing, and because facility reads the most recent 6 encounters, a merge yields
+the genuinely most recent 6 across both devices. Up to 24 encounters per fact are retained.
+
+**Load & replace** clears local progress first. For a shared or borrowed device.
+
+Import refuses any file whose `schema` it doesn't recognise rather than guessing — the record format
+has already changed once. Malformed individual records are dropped rather than failing the whole
+file, and the older boolean form is read correctly.
+
+One honest caveat: `totals` are running counters that can't be merged without double-counting, so
+after any import they're recomputed from retained history and the labels switch from "all time" to
+"retained history" (tracked by `totals.scoped`). Before any import they're true lifetime figures.
+
+### Moving between your own devices
+
+Save a copy into a synced folder (OneDrive, Drive, Dropbox), then use **Load & combine** on the other
+device. There's no server, so this is deliberate rather than automatic — which also means it works
+offline and there's nothing to sign in to.
+
+Progress is stored per origin. Data from opening `index.html` off the disk won't appear on the
+Pages URL, and vice versa.
+
+### Handing in to a teacher
+
+Students **Save a copy** and upload the file to a Canvas assignment. Canvas prefixes each file with
+the student's name on bulk download, and the export carries the name inside it too, so a downloaded
+zip is unambiguous either way.
 
 ## Deploying
 
